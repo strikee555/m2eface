@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LivePortrait Event Generation Pipeline</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #ffffff;
+            color: #333333;
+            margin: 0;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .grid-table {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: separate;
+            border-spacing: 20px 0;
+        }
+        .column {
+            display: table-cell;
+            width: 33.333%;
+            vertical-align: top;
+            box-sizing: border-box;
+        }
+        .text-section {
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 35px;
+            min-height: 120px;
+            word-break: keep-all;
+            color: #111111;
+            font-weight: 500;
+        }
+        .image-box {
+            background-color: #000000;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            padding: 10px;
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .content-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="grid-table">
+            
+            <!-- 좌측 열 -->
+            <div class="column">
+                <div class="text-section">
+                    LivePortrait 생성 동영상 &rarr; RAFT로 optical flow 추출 &rarr; 이미지 워핑하고 이벤트 생성 수식 적용
+                </div>
+                <div class="image-box">
+                    <img src="events_33ms.png" class="content-image" alt="좌측 상단 이벤트 시각화">
+                </div>
+                <div class="image-box">
+                    <img src="event.gif" class="content-image" alt="좌측 하단 이벤트 시각화">
+                </div>
+            </div>
+
+            <!-- 중앙 열 -->
+            <div class="column">
+                <div class="text-section">
+                    LivePortrait 중간 생성물인 dense warping field &rarr; 이미지 워핑하고 이벤트 생성 수식 적용
+                </div>
+            </div>
+
+            <!-- 우측 열 -->
+            <div class="column">
+                <div class="text-section">
+                    LivePortrait 중간 생성물인 dense warping field 추출 + semantic mask 생성<br>
+                    &rarr; Semantic flow &rarr; frame warping &rarr; frame간 빛 변화로 event 생성 (v2e)
+                </div>
+                <div class="image-box">
+                    <img src="uploaded_flow_event_stream_black.gif" class="content-image" alt="우측 Semantic 마스크 이벤트">
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>
