@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="LivePortrait 기반 얼굴 모션에서 optical flow, dense warping field, semantic mask를 활용해 event-like representation을 생성하는 프로젝트 페이지" />
+  <title>LivePortrait Event Generation Pipeline</title>
+  <style>
+    :root {
+      --bg: #08090d;
+      --panel: #11131a;
+      --panel-2: #151824;
+      --text: #eef1f7;
+      --muted: #a4adbd;
+      --line: #252b3a;
+      --accent-red: #ff3b3b;
+      --accent-blue: #1777ff;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+      --radius: 18px;
+      --max-width: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(23, 119, 255, 0.16), transparent 28%),
+        radial-gradient(circle at 82% 8%, rgba(255, 59, 59, 0.14), transparent 30%),
+        linear-gradient(180deg, #08090d 0%, #0b0d13 48%, #08090d 100%);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      line-height: 1.6;
+      word-break: keep-all;
+    }
+
+    a { color: inherit; }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 42px 20px 64px;
+    }
+
+    .hero {
+      padding: 42px 0 28px;
+      text-align: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+      padding: 7px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.045);
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent-red), var(--accent-blue));
+      box-shadow: 0 0 18px rgba(255, 59, 59, 0.65);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(36px, 7vw, 72px);
+      line-height: 0.96;
+      letter-spacing: -0.06em;
+      font-weight: 820;
+    }
+
+    .subtitle {
+      max-width: 760px;
+      margin: 22px auto 0;
+      color: var(--muted);
+      font-size: clamp(16px, 2.1vw, 20px);
+      line-height: 1.65;
+    }
+
+    .current-setup {
+      margin-top: 10px;
+      display: inline-block;
+      padding: 8px 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      color: #cbd5e1;
+      font-size: 15px;
+    }
+
+    .hero-figure {
+      margin: 34px 0 0;
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) + 4px);
+      background: #000;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    /* 미디어 박스 디자인 최적화: 고정 높이 대신 aspect-ratio를 부여하여 여백 원천 차단 */
+    .media-box-16x9 {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .media-box-9x16 {
+      width: 100%;
+      max-width: 250px;
+      margin: 0 auto;
+      aspect-ratio: 9 / 16;
+      background: #000;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* 원본 비율을 보존하면서 꽉 채우도록 cover 설정 (여백 제거 핵심) */
+    .media-box-16x9 video,
+    .media-box-16x9 img,
+    .media-box-9x16 video,
+    .media-box-9x16 img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .caption {
+      margin: 0;
+      padding: 12px 16px 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+      font-size: 14px;
+      text-align: left;
+    }
+
+    section { margin-top: 50px; }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(25px, 3vw, 36px);
+      line-height: 1.08;
+      letter-spacing: -0.04em;
+    }
+
+    .section-desc {
+      max-width: 520px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .comparison-layout {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .sticky-column {
+      position: sticky;
+      top: 30px;
+    }
+
+    .pipeline-grid-right {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+      box-shadow: 0 16px 54px rgba(0, 0, 0, 0.22);
+      overflow: hidden;
+    }
+
+    .card-body { padding: 20px 20px 18px; flex-grow: 1; }
+
+    .tag {
+      display: inline-flex;
+      margin-bottom: 13px;
+      padding: 4px 9px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: 0.03em;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13.5px;
+      line-height: 1.6;
+    }
+
+    .image-wrap {
+      padding: 0 14px 14px;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.75fr);
+      gap: 18px;
+    }
+
+    .result-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      overflow: hidden;
+    }
+
+    .result-card img {
+      width: 100%;
+      display: block;
+      background: #000;
+    }
+
+    .result-meta { padding: 18px 20px 20px; }
+    .result-meta h3 { margin-bottom: 8px; }
+    .result-meta p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .note {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .note strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .note span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    footer {
+      margin-top: 56px;
+      padding-top: 22px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 950px) {
+      .comparison-layout { grid-template-columns: 1fr; }
+      .sticky-column { position: static; }
+    }
+
+    @media (max-width: 768px) {
+      .section-head { display: block; }
+      .section-desc { margin-top: 10px; }
+      .pipeline-grid-right, .result-grid, .notes { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 560px) {
+      .page { padding: 28px 14px 46px; }
+      .hero { padding-top: 24px; }
+      .card-body, .result-meta { padding: 17px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="eyebrow"><span class="dot"></span> Event-like Motion Representation</div>
+      <h1>LivePortrait Event<br />Generation Pipeline</h1>
+      <p class="subtitle">
+        LivePortrait 기반 얼굴 모션에서 optical flow, dense warping field, semantic mask를 활용해
+        event-like representation을 생성하고 비교하는 실험 페이지입니다.<br />
+        <span class="current-setup">현재: driving/d3.mp4 및 source/51_Dresses_wearingdress_51_377.jpg 사용</span>
+      </p>
+      <figure class="hero-figure">
+        <!-- 오리지널 비디오 태그 복원 및 여백 제거 비율 매칭 -->
+        <div class="media-box-16x9">
+          <video src="animated.mp4" autoplay loop muted playsinline></video>
+        </div>
+        <figcaption class="caption">
+          좌측: Driving video / 중간: Source image / 우측: LivePortrait 실행 결과 animated video
+        </figcaption>
+      </figure>
+    </header>
+
+    <section aria-labelledby="pipeline-title">
+      <div class="section-head">
+        <h2 id="pipeline-title">Pipeline Comparison</h2>
+        <p class="section-desc">
+          동일한 LivePortrait 기반 모션을 입력으로 사용하되, motion source와 event 생성 경로를 다르게 구성했습니다.
+        </p>
+      </div>
+
+      <div class="comparison-layout">
+        <!-- Baseline: 16:9 로컬 비디오 실행 -->
+        <div class="sticky-column">
+          <article class="card">
+            <div class="card-body">
+              <span class="tag">Baseline</span>
+              <h3>v2e</h3>
+              <p>LivePortrait 생성 동영상을 기존의 이벤트 시뮬레이터인 v2e에 입력합니다.</p>
+            </div>
+            <div class="image-wrap">
+              <div class="media-box-16x9">
+                <video src="v2e_events_video.mp4" autoplay loop muted playsinline></video>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="pipeline-grid-right">
+          <!-- Pipeline A: 9:16 쇼츠 로컬 비디오 -->
+          <article class="card">
+            <div class="card-body">
+              <span class="tag">Pipeline A</span>
+              <h3>RAFT Optical Flow</h3>
+              <p>LivePortrait 생성 동영상에서 RAFT로 optical flow를 추출한 뒤, 각 생성 프레임의 공간 밝기 기울기를 계산하여 event 생성 수식을 적용합니다.</p>
+            </div>
+            <div class="image-wrap">
+              <div class="media-box-9x16">
+                <video src="v1_events_video.mp4" autoplay loop muted playsinline></video>
+              </div>
+            </div>
+          </article>
+
+          <!-- Pipeline B: 9:16 쇼츠 로컬 비디오 -->
+          <article class="card">
+            <div class="card-body">
+              <span class="tag">Pipeline B</span>
+              <h3>Dense Warping Field</h3>
+              <p>LivePortrait 중간 생성물인 dense warping field를 활용하며, 각 생성 프레임의 공간 밝기 기울기를 계산하여 event 생성 수식을 적용합니다.</p>
+            </div>
+            <div class="image-wrap">
+              <div class="media-box-9x16">
+                <video src="v2_events_video.mp4" autoplay loop muted playsinline></video>
+              </div>
+            </div>
+          </article>
+
+          <!-- Pipeline C: 9:16 쇼츠 로컬 비디오 -->
+          <article class="card">
+            <div class="card-body">
+              <span class="tag">Pipeline C</span>
+              <h3>Dense Warping Field + Frame Warping</h3>
+              <p>LivePortrait 중간 생성물인 dense warping field를 직접 사용해 frame을 warping하고 event 생성 수식을 적용합니다.</p>
+            </div>
+            <div class="image-wrap">
+              <div class="media-box-9x16">
+                <video src="v3_events_video.mp4" autoplay loop muted playsinline></video>
+              </div>
+            </div>
+          </article>
+
+          <!-- Pipeline D: 로컬 미디어 균형을 맞춘 9:16 이미지 박스 -->
+          <article class="card">
+            <div class="card-body">
+              <span class="tag">Pipeline D</span>
+              <h3>Dense Warping Field + Semantic mask</h3>
+              <p>dense warping field와 semantic mask를 결합해 semantic flow를 구성하고, frame 간 빛 변화 기반으로 event를 생성합니다.</p>
+            </div>
+            <div class="image-wrap">
+              <div class="media-box-9x16">
+                <img src="uploaded_flow_event_stream_black.gif" alt="Semantic flow 기반 event stream 결과" />
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="results-title">
+      <div class="section-head">
+        <h2 id="results-title">Results</h2>
+        <p class="section-desc">
+          polarity가 명확히 분리되는 event-like stream과 semantic mask 기반의 sparse motion response를 비교합니다.
+        </p>
+      </div>
+      <div class="result-grid">
+        <article class="result-card">
+          <img src="events_33ms.png" alt="Full-width event visualization result" />
+          <div class="result-meta">
+            <h3>Global facial motion events</h3>
+            <p>전체 얼굴 움직임에서 발생하는 polarity event를 넓은 시야로 시각화한 결과입니다.</p>
+          </div>
+        </article>
+        <article class="result-card">
+          <img src="uploaded_flow_event_stream_black.gif" alt="Semantic-flow-guided event visualization" />
+          <div class="result-meta">
+            <h3>Semantic-flow-guided events</h3>
+            <p>semantic mask를 활용해 의미 영역 중심으로 motion response를 제한한 결과입니다.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="takeaways-title">
+      <div class="section-head">
+        <h2 id="takeaways-title">Takeaways</h2>
+        <p class="section-desc">GitHub Pages에서 바로 보이도록 이미지 중심의 간결한 프로젝트 페이지로 구성했습니다.</p>
+      </div>
+      <div class="notes">
+        <div class="note">
+          <strong>RAFT baseline</strong>
+          <span>생성 동영상에서 후처리 방식으로 optical flow를 얻는 기준 경로입니다.</span>
+        </div>
+        <div class="note">
+          <strong>Internal field</strong>
+          <span>LivePortrait 내부 warping field를 직접 사용해 중간 표현을 활용합니다.</span>
+        </div>
+        <div class="note">
+          <strong>Semantic constraint</strong>
+          <span>semantic mask를 결합해 얼굴의 의미 영역 기반 event 생성으로 확장합니다.</span>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      LivePortrait Event Generation Pipeline · GitHub Pages-ready static site
+    </footer>
+  </main>
+</body>
+</html>
